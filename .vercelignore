@@ -3,6 +3,10 @@
 __pycache__
 /tests
 *.db
+# Force Vercel's Python builder to use requirements.txt (which pins
+# psycopg[binary]) instead of pyproject.toml/uv. Both list the same deps; this
+# just removes the "which source wins" ambiguity on the build.
 uv.lock
+/pyproject.toml
 /seed.py
 /assignment.md
