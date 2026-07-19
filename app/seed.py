@@ -7,6 +7,8 @@ import cycle.
 """
 import os
 
+from sqlalchemy.exc import IntegrityError
+
 from .auth import hash_password
 from .db import SessionLocal
 from .models import User, UserRole
@@ -28,7 +30,12 @@ def seed_default_accounts() -> list[str]:
                 db.add(User(id=uid, role=role, password_hash=hash_password(password)))
                 created.append(uid)
         if created:
-            db.commit()
+            try:
+                db.commit()
+            except IntegrityError:
+                # Another serverless cold start seeded concurrently — fine.
+                db.rollback()
+                created = []
     finally:
         db.close()
     return created

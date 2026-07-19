@@ -28,17 +28,27 @@ def clear_database(
     db.query(User).delete()
     db.commit()
 
-    # Reset SQLite autoincrement counters so ids start from 1 again.
+    # Reset autoincrement counters so ids start from 1 again (dialect-specific).
+    dialect = db.get_bind().dialect.name
     try:
-        db.execute(
-            text(
-                "DELETE FROM sqlite_sequence "
-                "WHERE name IN ('sales', 'withdrawals', 'ledger_entries')"
+        if dialect == "sqlite":
+            db.execute(
+                text(
+                    "DELETE FROM sqlite_sequence "
+                    "WHERE name IN ('sales', 'withdrawals', 'ledger_entries')"
+                )
             )
-        )
+        elif dialect == "postgresql":
+            db.execute(
+                text(
+                    "ALTER SEQUENCE IF EXISTS sales_id_seq RESTART WITH 1;"
+                    "ALTER SEQUENCE IF EXISTS withdrawals_id_seq RESTART WITH 1;"
+                    "ALTER SEQUENCE IF EXISTS ledger_entries_id_seq RESTART WITH 1;"
+                )
+            )
         db.commit()
     except Exception:
-        db.rollback()  # non-SQLite backend or no sequence table — harmless
+        db.rollback()  # counters are cosmetic — never fail the clear for them
 
     seeded = seed_default_accounts()
     return {"status": "cleared", "seeded_users": seeded}

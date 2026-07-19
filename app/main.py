@@ -1,5 +1,8 @@
 """FastAPI application wiring."""
+import os
+
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .api import admin, auth, payouts, sales, users, withdrawals
@@ -17,6 +20,18 @@ app = FastAPI(
     description="Affiliate-sales payout system: advances, reconciliation, "
     "withdrawals, and failed-payout recovery.",
     version="1.0.0",
+)
+
+# CORS: the React client is served from a different origin in production. Auth
+# is a Bearer token (not a cookie), so allowing "*" is safe with credentials
+# off. Restrict by setting CORS_ORIGINS (comma-separated) to the client URL(s).
+_cors_origins = os.getenv("CORS_ORIGINS")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _cors_origins.split(",")] if _cors_origins else ["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
