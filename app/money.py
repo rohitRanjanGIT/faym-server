@@ -1,18 +1,3 @@
-"""Money helpers.
-
-All internal amounts are integer paise. The public API accepts/returns rupees
-for readability (the reference data uses rupees), converting at the boundary.
-
-Advance rounding policy
------------------------
-The advance is 10% of a sale's earning. When 10% is not a whole number of
-paise we round *down* (floor). Rationale: the advance is money paid out before
-the sale is confirmed, so being conservative (never over-advancing) protects
-the platform from clawback risk. The lost fraction is at most 0.9 paise and is
-recovered at final settlement anyway (the final payout adds back
-``earning - advance``).
-"""
-
 PAISE_PER_RUPEE = 100
 ADVANCE_RATE_PERCENT = 10
 

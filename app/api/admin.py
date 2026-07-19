@@ -28,24 +28,15 @@ def clear_database(
     db.query(User).delete()
     db.commit()
 
-    # Reset autoincrement counters so ids start from 1 again (dialect-specific).
-    dialect = db.get_bind().dialect.name
+    # Reset Postgres identity sequences so ids start from 1 again.
     try:
-        if dialect == "sqlite":
-            db.execute(
-                text(
-                    "DELETE FROM sqlite_sequence "
-                    "WHERE name IN ('sales', 'withdrawals', 'ledger_entries')"
-                )
+        db.execute(
+            text(
+                "ALTER SEQUENCE IF EXISTS sales_id_seq RESTART WITH 1;"
+                "ALTER SEQUENCE IF EXISTS withdrawals_id_seq RESTART WITH 1;"
+                "ALTER SEQUENCE IF EXISTS ledger_entries_id_seq RESTART WITH 1;"
             )
-        elif dialect == "postgresql":
-            db.execute(
-                text(
-                    "ALTER SEQUENCE IF EXISTS sales_id_seq RESTART WITH 1;"
-                    "ALTER SEQUENCE IF EXISTS withdrawals_id_seq RESTART WITH 1;"
-                    "ALTER SEQUENCE IF EXISTS ledger_entries_id_seq RESTART WITH 1;"
-                )
-            )
+        )
         db.commit()
     except Exception:
         db.rollback()  # counters are cosmetic — never fail the clear for them

@@ -1,14 +1,3 @@
-"""SQLAlchemy ORM models — the database schema.
-
-Money is stored everywhere as an integer number of paise (1 rupee = 100
-paise). Integers avoid floating-point rounding errors that would otherwise
-corrupt balances over many operations.
-
-The ``LedgerEntry`` table is the heart of the design: every movement of money
-is an immutable, append-only row. A user's withdrawable balance is the sum of
-the balance-affecting ledger rows, which makes the system fully auditable and
-reconcilable.
-"""
 import enum
 from datetime import datetime
 

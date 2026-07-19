@@ -1,20 +1,31 @@
-"""Database engine, session factory, and declarative base.
-
-Local dev defaults to SQLite (zero-config, file-backed). In production set
-``DATABASE_URL`` to a Postgres connection string (e.g. Vercel Postgres / Neon);
-the URL is normalized to the psycopg (v3) driver and the engine is configured
-for a serverless environment.
-"""
 import os
+import sys
+from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from fastapi import HTTPException
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-_RAW_URL = os.getenv("DATABASE_URL", "sqlite:///./payouts.db")
 
-# Vercel/Neon hand out "postgres://" or "postgresql://"; SQLAlchemy needs an
-# explicit driver. Point them at psycopg v3.
+def _load_dotenv() -> None:
+    if "pytest" in sys.modules:
+        return
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+
+_load_dotenv()
+
+_RAW_URL = os.getenv("DATABASE_URL", "")
+
 if _RAW_URL.startswith("postgres://"):
     DATABASE_URL = _RAW_URL.replace("postgres://", "postgresql+psycopg://", 1)
 elif _RAW_URL.startswith("postgresql://"):
@@ -22,21 +33,30 @@ elif _RAW_URL.startswith("postgresql://"):
 else:
     DATABASE_URL = _RAW_URL
 
-IS_SQLITE = DATABASE_URL.startswith("sqlite")
-_IS_SQLITE = IS_SQLITE  # backward-compatible alias
-
-if _IS_SQLITE:
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    # Serverless-friendly: NullPool avoids holding connections between function
-    # invocations, and disabling psycopg's server-side prepared statements keeps
-    # a pooled (pgbouncer) connection string working.
-    engine = create_engine(
-        DATABASE_URL,
-        poolclass=NullPool,
-        pool_pre_ping=True,
-        connect_args={"prepare_threshold": None},
+ENGINE_ERROR: str | None = None
+engine = None
+if not DATABASE_URL:
+    ENGINE_ERROR = (
+        "DATABASE_URL is not set. This app requires a Postgres connection "
+        "string (set it in the Vercel project's Environment Variables, or in "
+        "a local .env loaded via `uv run --env-file .env main.py`)."
     )
+elif not DATABASE_URL.startswith("postgresql+psycopg://"):
+    _scheme = _RAW_URL.split("://", 1)[0] if "://" in _RAW_URL else _RAW_URL
+    ENGINE_ERROR = (
+        f"DATABASE_URL must be a Postgres URL; got scheme '{_scheme}'. "
+        "SQLite and other backends are not supported."
+    )
+else:
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            poolclass=NullPool,
+            pool_pre_ping=True,
+            connect_args={"prepare_threshold": None},
+        )
+    except Exception as exc: 
+        ENGINE_ERROR = f"{type(exc).__name__}: {exc}"
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
@@ -45,18 +65,12 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
-if _IS_SQLITE:
-
-    @event.listens_for(engine, "connect")
-    def _enable_sqlite_fk(dbapi_connection, _record):
-        """SQLite ignores FOREIGN KEY constraints unless explicitly enabled."""
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-
 def get_db() -> Session:
-    """FastAPI dependency that yields a request-scoped session."""
+    if engine is None:
+        raise HTTPException(
+            status_code=503,
+            detail=ENGINE_ERROR or "Database is not configured.",
+        )
     db = SessionLocal()
     try:
         yield db
