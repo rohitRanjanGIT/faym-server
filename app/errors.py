@@ -19,6 +19,12 @@ class AlreadyReconciledError(DomainError):
     status_code = 409
 
 
+class AlreadyExistsError(DomainError):
+    """A resource with the same identifier already exists (e.g. a user)."""
+
+    status_code = 409
+
+
 class InvalidStatusError(DomainError):
     status_code = 400
 
@@ -35,3 +41,15 @@ class InsufficientBalanceError(DomainError):
 
 class InvalidWithdrawalStateError(DomainError):
     status_code = 409
+
+
+class AuthError(DomainError):
+    """Missing/invalid credentials or token."""
+
+    status_code = 401
+
+
+class ForbiddenError(DomainError):
+    """Authenticated but not allowed to perform this action."""
+
+    status_code = 403

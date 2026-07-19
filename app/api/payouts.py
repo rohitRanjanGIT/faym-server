@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ..auth import Principal, require_admin
 from ..db import get_db
 from ..services import payout_service
 
@@ -10,9 +11,11 @@ router = APIRouter(tags=["payouts"])
 
 @router.post("/jobs/advance-payout")
 def run_advance_payout(
-    user_id: str | None = None, db: Session = Depends(get_db)
+    user_id: str | None = None,
+    db: Session = Depends(get_db),
+    _admin: Principal = Depends(require_admin),
 ) -> dict:
-    """Run the advance-payout job.
+    """Run the advance-payout job (admin only).
 
     Pays a 10% advance on every eligible pending sale (optionally scoped to one
     user). Safe to run repeatedly — already-advanced sales are skipped.

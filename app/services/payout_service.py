@@ -16,6 +16,38 @@ def _get_user(db: Session, user_id: str) -> User:
     return user
 
 
+def pay_advance_for_sale(db: Session, sale: Sale, user: User) -> int:
+    """Pay the 10% advance for a single sale. Returns the paise paid (0 if none).
+
+    Idempotent: a sale that already has an advance (``advance_paid_at`` set) is
+    left untouched, and the ledger's UNIQUE (sale_id, ADVANCE) constraint is a
+    backstop. The advance is credited to the user's **withdrawable balance**
+    immediately on logging, so it can be withdrawn right away. On approval the
+    remaining 90% is added (total = the full earning); on rejection the advance
+    is clawed back (net 0, or negative if it was already withdrawn).
+
+    The caller commits the surrounding transaction.
+    """
+    if sale.advance_paid_at is not None:
+        return 0
+    advance = money.advance_of(sale.earning_paise)
+    if advance <= 0:
+        return 0  # nothing to pay (e.g. sub-10-paise earning)
+
+    sale.advance_paid_paise = advance
+    sale.advance_paid_at = utcnow()
+    post_entry(
+        db,
+        user,
+        LedgerType.ADVANCE,
+        advance,
+        affects_withdrawable=True,
+        sale_id=sale.id,
+        note="10% advance credited to balance when sale was logged",
+    )
+    return advance
+
+
 def run_advance_payout(db: Session, user_id: str | None = None) -> list[dict]:
     """Pay a 10% advance on every eligible pending sale.
 
@@ -35,25 +67,10 @@ def run_advance_payout(db: Session, user_id: str | None = None) -> list[dict]:
 
     made: list[dict] = []
     for sale in db.scalars(stmt).all():
-        advance = money.advance_of(sale.earning_paise)
-        if advance <= 0:
-            continue  # nothing to pay (e.g. sub-10-paise earning)
-
         user = _get_user(db, sale.user_id)
-        sale.advance_paid_paise = advance
-        sale.advance_paid_at = utcnow()
-
-        # Advance is transferred directly to the user; it does not enter the
-        # withdrawable balance, so affects_withdrawable=False (audit only).
-        post_entry(
-            db,
-            user,
-            LedgerType.ADVANCE,
-            advance,
-            affects_withdrawable=False,
-            sale_id=sale.id,
-            note="10% advance on pending sale",
-        )
+        advance = pay_advance_for_sale(db, sale, user)
+        if advance <= 0:
+            continue
         made.append(
             {
                 "sale_id": sale.id,

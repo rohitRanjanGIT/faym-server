@@ -28,6 +28,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 
+class UserRole(str, enum.Enum):
+    admin = "admin"
+    user = "user"
+
+
 class SaleStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
@@ -51,7 +56,7 @@ REVERSIBLE_WITHDRAWAL_STATES = {
 
 
 class LedgerType(str, enum.Enum):
-    ADVANCE = "ADVANCE"                        # 10% advance transferred to user
+    ADVANCE = "ADVANCE"                        # 10% advance credited on logging
     FINAL_APPROVED = "FINAL_APPROVED"          # earning - advance, on approval
     FINAL_CLAWBACK = "FINAL_CLAWBACK"          # -advance, on rejection
     WITHDRAWAL = "WITHDRAWAL"                   # user pulls from balance
@@ -63,6 +68,13 @@ class User(Base):
 
     # The natural id from the reference data, e.g. "john_doe".
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    # Role gates what the user may do (admins manage everyone; users self-serve).
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole), default=UserRole.user, nullable=False
+    )
+    # PBKDF2 password hash. Nullable: users auto-created on their first sale have
+    # no login until an admin provisions credentials for them.
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Materialized withdrawable balance for O(1) reads and cheap guards.
     # Always kept equal to SUM(ledger.amount_paise WHERE affects_withdrawable).
     withdrawable_balance_paise: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -137,9 +149,9 @@ class LedgerEntry(Base):
     # Signed amount: credits are positive, debits negative.
     amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Whether this entry moves the *withdrawable* balance. ADVANCE payouts are
-    # transferred directly to the user and do NOT feed the withdrawable balance,
-    # so they are recorded for audit with affects_withdrawable = False.
+    # Whether this entry moves the *withdrawable* balance. Most entries do,
+    # including ADVANCE (the 10% is credited to the balance when a sale is
+    # logged). Entries recorded for audit only would set this False.
     affects_withdrawable: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     # Running withdrawable balance after this entry (None for non-affecting rows).

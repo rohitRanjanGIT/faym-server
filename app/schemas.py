@@ -8,6 +8,37 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+# ---- Auth -----------------------------------------------------------------
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user_id: str
+    role: str
+
+
+class MeResponse(BaseModel):
+    user_id: str
+    role: str
+
+
+# ---- Users ----------------------------------------------------------------
+class UserCreate(BaseModel):
+    user_id: str = Field(examples=["jane_doe"], min_length=1)
+    password: str = Field(min_length=1, examples=["secret123"])
+    role: str = Field(default="user", examples=["user", "admin"])
+
+
+class UserSummary(BaseModel):
+    user_id: str
+    role: str
+    withdrawable_balance_rupees: float
+    created_at: datetime
+
+
 # ---- Sales ----------------------------------------------------------------
 class SaleCreate(BaseModel):
     user_id: str = Field(examples=["john_doe"])

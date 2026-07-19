@@ -40,10 +40,9 @@ def test_advance_only_for_pending_sales(db, user):
     assert made == []
 
 
-def test_advance_does_not_touch_withdrawable_balance(db, user):
+def test_advance_credits_withdrawable_balance(db, user):
     make_sale(db, earning_rupees=40)
     payout_service.run_advance_payout(db, user_id="john_doe")
     db.refresh(user)
-    # Advance is transferred directly; withdrawable balance stays 0 until
-    # reconciliation.
-    assert user.withdrawable_balance_paise == 0
+    # The advance is credited to the withdrawable balance immediately.
+    assert user.withdrawable_balance_paise == 400  # Rs 4

@@ -1,17 +1,16 @@
 """FastAPI application wiring."""
-from pathlib import Path
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
-from .api import payouts, sales, users, withdrawals
+from .api import admin, auth, payouts, sales, users, withdrawals
 from .db import Base, engine
 from .errors import DomainError
+from .seed import seed_default_accounts
 
 # Create tables on startup. For a real deployment this would be an Alembic
 # migration rather than create_all.
 Base.metadata.create_all(engine)
+seed_default_accounts()
 
 app = FastAPI(
     title="User Payout Management System",
@@ -30,10 +29,12 @@ async def domain_error_handler(_request: Request, exc: DomainError) -> JSONRespo
     )
 
 
+app.include_router(auth.router)
 app.include_router(sales.router)
 app.include_router(payouts.router)
 app.include_router(withdrawals.router)
 app.include_router(users.router)
+app.include_router(admin.router)
 
 
 @app.get("/health", tags=["meta"])
@@ -43,10 +44,8 @@ def health() -> dict:
 
 @app.get("/", include_in_schema=False)
 def root() -> RedirectResponse:
-    """Send the bare host to the dashboard."""
-    return RedirectResponse(url="/ui/")
+    """Send the bare host to the interactive API docs.
 
-
-# Serve the simple dashboard (static single-page app) at /ui.
-_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
-app.mount("/ui", StaticFiles(directory=str(_frontend_dir), html=True), name="ui")
+    The dashboard is now the separate React client (../client-faym-dashboard).
+    """
+    return RedirectResponse(url="/docs")

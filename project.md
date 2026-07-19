@@ -7,7 +7,7 @@ see [DESIGN.md](./DESIGN.md).
 
 - **Base URL (local):** `http://127.0.0.1:8000`
 - **Interactive docs:** `/docs` (Swagger) · `/redoc`
-- **Dashboard UI:** `/ui/` (root `/` redirects here)
+- **Dashboard UI:** the separate React client in `../client-faym-dashboard`
 - **Money:** requests/responses use **rupees**; stored internally as integer paise.
 
 ---
@@ -17,7 +17,7 @@ see [DESIGN.md](./DESIGN.md).
 | Concept | Meaning |
 |---|---|
 | **Sale** | One affiliate sale. Starts `pending`; reconciled to `approved` or `rejected`. |
-| **Advance payout** | 10% of a pending sale's earning, paid up front. Idempotent. |
+| **Advance payout** | 10% of a sale's earning, paid up front **automatically when the sale is logged**. Idempotent. |
 | **Reconciliation** | Admin sets a sale to approved/rejected; system settles the final payout. |
 | **Withdrawable balance** | What the user can withdraw. Fed by final settlement, not by advances. |
 | **Withdrawal** | User pulls money from the balance. Max one per 24h. |
@@ -27,9 +27,9 @@ see [DESIGN.md](./DESIGN.md).
 
 | Event | Effect on withdrawable balance |
 |---|---|
-| Advance paid | none (direct transfer, recorded for audit only) |
-| Approved | `+ (earning − advance_already_paid)` |
-| Rejected | `− advance_already_paid` (clawback) |
+| Advance paid (on logging) | `+ advance` (10%, credited immediately — withdrawable right away) |
+| Approved | `+ (earning − advance_already_paid)` → net = full earning |
+| Rejected | `− advance_already_paid` (clawback) → net = 0 |
 | Withdrawal initiated | `− amount` |
 | Withdrawal failed/cancelled/rejected | `+ amount` (credited back) |
 
@@ -40,8 +40,10 @@ see [DESIGN.md](./DESIGN.md).
 ### 1. Create sale
 `POST /sales`
 
-Records a new sale. New sales always start `pending`. The user is auto-created on
-first reference (demo convenience).
+Records a new sale. New sales always start `pending`, and the **10% advance is
+paid automatically** as part of logging the sale (see §3 for the mechanics). The
+user must already exist and the caller must be that user — admins do not create
+sales.
 
 **Request**
 ```json
@@ -54,8 +56,13 @@ first reference (demo convenience).
 ```json
 { "id": 1, "user_id": "john_doe", "brand": "brand_1",
   "earning_rupees": 40.0, "status": "pending",
-  "advance_paid_rupees": 0.0, "reconciled": false }
+  "advance_paid_rupees": 4.0, "reconciled": false }
 ```
+`advance_paid_rupees` is already `4.0` (10% of ₹40) because the advance is paid
+on logging, and it is **credited to the withdrawable balance immediately** — the
+user's balance is already `4.0` and can be withdrawn before the sale is
+reconciled. On approval the remaining `36.0` is added (net full ₹40); on
+rejection the advance is clawed back (net ₹0).
 
 ---
 
@@ -69,6 +76,11 @@ Used by the dashboard to render the sales table.
 
 ### 3. Run advance payout job
 `POST /jobs/advance-payout?user_id={user_id}`
+
+> **Note:** advances are now paid automatically when a sale is logged (§1), so
+> this job is a **legacy backstop** — in normal operation it finds nothing
+> eligible and pays `0`. It remains only to advance any sale that somehow has no
+> advance yet, and to preserve idempotency guarantees.
 
 Pays a **10% advance** on every *eligible* pending sale (status `pending` and no
 advance yet). `user_id` is optional — omit it to run for all users.
@@ -102,7 +114,7 @@ final payout into the withdrawable balance.
 { "reconciled": [
     { "sale_id": 2, "user_id": "john_doe", "status": "approved",
       "final_adjustment_rupees": 36.0,
-      "withdrawable_balance_rupees": 68.0 } ] }
+      "withdrawable_balance_rupees": 40.0 } ] }
 ```
 
 **Errors**
@@ -179,12 +191,12 @@ Returns the withdrawable balance and the full ledger (audit trail).
 
 **Response** `200`
 ```json
-{ "user_id": "john_doe", "withdrawable_balance_rupees": 68.0,
+{ "user_id": "john_doe", "withdrawable_balance_rupees": 80.0,
   "ledger": [
     { "id": 1, "entry_type": "ADVANCE", "amount_rupees": 4.0,
-      "affects_withdrawable": false, "balance_after_rupees": null,
+      "affects_withdrawable": true, "balance_after_rupees": 4.0,
       "sale_id": 1, "withdrawal_id": null,
-      "note": "10% advance on pending sale",
+      "note": "10% advance credited to balance when sale was logged",
       "created_at": "2026-07-19T10:00:00" } ] }
 ```
 
@@ -194,7 +206,7 @@ Returns the withdrawable balance and the full ledger (audit trail).
 
 ### 10. Meta
 - `GET /health` → `{ "status": "ok" }`
-- `GET /` → redirects to `/ui/` (dashboard)
+- `GET /` → redirects to `/docs` (interactive API docs)
 
 ---
 
@@ -220,7 +232,7 @@ All business-rule violations return a consistent JSON body:
 
 | `entry_type` | Sign | Affects balance | Trigger |
 |---|---|---|---|
-| `ADVANCE` | + | no | advance job |
+| `ADVANCE` | + | yes | sale logged (auto) |
 | `FINAL_APPROVED` | + | yes | sale approved |
 | `FINAL_CLAWBACK` | − | yes | sale rejected |
 | `WITHDRAWAL` | − | yes | withdrawal initiated |
@@ -230,9 +242,9 @@ All business-rule violations return a consistent JSON body:
 
 ## Typical flow (the assignment example)
 
-1. `POST /sales` ×3 (`john_doe`, `brand_1`, ₹40 each)
-2. `POST /jobs/advance-payout?user_id=john_doe` → advance **₹12**
-3. `POST /reconcile` → sale 1 rejected, sales 2 & 3 approved
-4. `GET /users/john_doe/balance` → withdrawable **₹68**
-5. `POST /withdrawals` → initiate ₹68
-6. (optional) `POST /withdrawals/1/fail` → ₹68 credited back, re-withdrawable immediately
+1. `POST /sales` ×3 (`john_doe`, `brand_1`, ₹40 each) → each auto-credits a ₹4
+   advance to the balance on logging (**₹12** total, withdrawable **₹12** now)
+2. `POST /reconcile` → sale 1 rejected, sales 2 & 3 approved
+3. `GET /users/john_doe/balance` → withdrawable **₹80** (2 approved × ₹40, rejected nets ₹0)
+4. `POST /withdrawals` → initiate ₹68
+5. (optional) `POST /withdrawals/1/fail` → ₹68 credited back, re-withdrawable immediately

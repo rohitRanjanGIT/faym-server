@@ -46,14 +46,21 @@ approval pays back `earning − advance`.
 Enforcing invariants in the schema means correctness survives races, retries, and
 buggy callers — not just the happy path.
 
-### 1.4 The advance is a *transfer*, not withdrawable balance
-The advance is money pushed to the user automatically; it does **not** enter the
-withdrawable balance and is **not** subject to the 24h withdrawal rule. It is
-recorded in the ledger with `affects_withdrawable = false` (audit only). The
-withdrawable balance is fed solely by **final settlement**, which is what the
-user later pulls via withdrawals. This is why advances net out correctly:
+### 1.4 The advance is credited to the withdrawable balance on logging
+The 10% advance is credited to the user's withdrawable balance the moment a sale
+is logged, so it can be withdrawn immediately (subject to the normal 24h rule).
+It is recorded in the ledger with `affects_withdrawable = true`. Final settlement
+then tops up or claws back:
 
-> lifetime received = advances + final payouts = Σ(approved earnings)
+- **Approved** adds the remaining `earning − advance`, so the sale nets the
+  **full earning**.
+- **Rejected** claws the advance back (`−advance`), so the sale nets **zero**
+  (and the balance goes negative if the advance was already withdrawn).
+
+> lifetime credited = advances + final settlements = Σ(approved earnings)
+
+The advance and its clawback share the same `sale_id`, so a rejected sale's two
+entries (`+advance` then `−advance`) cancel exactly.
 
 ---
 
@@ -120,7 +127,7 @@ erDiagram
 
 | `entry_type` | Sign | Affects withdrawable? | When |
 |---|---|---|---|
-| `ADVANCE` | + | No (direct transfer) | advance job pays 10% |
+| `ADVANCE` | + | Yes | sale logged → 10% credited |
 | `FINAL_APPROVED` | + | Yes | sale approved → `earning − advance` |
 | `FINAL_CLAWBACK` | − | Yes | sale rejected → `−advance` |
 | `WITHDRAWAL` | − | Yes | user initiates withdrawal |
@@ -163,7 +170,7 @@ run_advance_payout(user?):
     for sale in sales where status=pending and advance_paid_at is null (and user?):
         advance = floor(earning_paise * 10 / 100)
         sale.advance_paid_paise = advance; sale.advance_paid_at = now
-        post_entry(ADVANCE, +advance, affects_withdrawable=False, sale)
+        post_entry(ADVANCE, +advance, affects_withdrawable=True, sale)
 
 reconcile_sale(sale, status):
     assert status in {approved, rejected}
