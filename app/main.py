@@ -6,14 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .api import admin, auth, payouts, sales, users, withdrawals
-from .db import Base, engine
+from .db import IS_SQLITE, Base, engine
 from .errors import DomainError
 from .seed import seed_default_accounts
 
-# Create tables on startup. For a real deployment this would be an Alembic
-# migration rather than create_all.
-Base.metadata.create_all(engine)
-seed_default_accounts()
+# Create tables + seed on startup. For a real deployment this would be an
+# Alembic migration rather than create_all.
+#
+# This is wrapped so a DB failure does NOT crash the whole serverless function
+# at import time (which surfaces as an opaque FUNCTION_INVOCATION_FAILED on
+# every route). Instead the app still boots and `/health` reports what went
+# wrong, so the cause is diagnosable from the browser.
+INIT_ERROR: str | None = None
+try:
+    Base.metadata.create_all(engine)
+    seed_default_accounts()
+except Exception as exc:  # noqa: BLE001 - surface any boot failure via /health
+    INIT_ERROR = f"{type(exc).__name__}: {exc}"
 
 app = FastAPI(
     title="User Payout Management System",
@@ -54,7 +63,18 @@ app.include_router(admin.router)
 
 @app.get("/health", tags=["meta"])
 def health() -> dict:
-    return {"status": "ok"}
+    """Liveness + boot diagnostics.
+
+    Reports which DB backend was selected and whether table creation / seeding
+    succeeded. If ``db_backend`` is ``sqlite`` in production, ``DATABASE_URL``
+    is not set for this environment (Vercel's filesystem is read-only, so
+    SQLite cannot be used there).
+    """
+    return {
+        "status": "degraded" if INIT_ERROR else "ok",
+        "db_backend": "sqlite" if IS_SQLITE else "postgres",
+        "init_error": INIT_ERROR,
+    }
 
 
 @app.get("/", include_in_schema=False)

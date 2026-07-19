@@ -22,7 +22,8 @@ elif _RAW_URL.startswith("postgresql://"):
 else:
     DATABASE_URL = _RAW_URL
 
-_IS_SQLITE = DATABASE_URL.startswith("sqlite")
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+_IS_SQLITE = IS_SQLITE  # backward-compatible alias
 
 if _IS_SQLITE:
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
