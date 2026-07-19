@@ -9,6 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
+# Local env files (never commit secrets)
+.env
+.env.local
+
 # SQLite database
 *.db
 .pytest_cache/
