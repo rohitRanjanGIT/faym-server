@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Payout Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Payout Dashboard</h1>
+    </div>
+    <div class="user-picker">
+      <input id="userInput" type="text" value="john_doe" spellcheck="false"
+             aria-label="User id" placeholder="user id" />
+      <button id="loadBtn" class="btn">Load user</button>
+    </div>
+  </header>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <main class="wrap">
+    <!-- Balance -->
+    <section class="card balance-card">
+      <div>
+        <p class="label">Withdrawable balance</p>
+        <p id="balance" class="balance">₹0.00</p>
+        <p class="sub">User: <strong id="currentUser">john_doe</strong></p>
+      </div>
+      <div class="balance-actions">
+        <button id="advanceBtn" class="btn accent">Run advance payout</button>
+      </div>
+    </section>
+
+    <div class="grid">
+      <!-- Create sale -->
+      <section class="card">
+        <h2>Create sale</h2>
+        <form id="saleForm" class="form">
+          <label>Brand
+            <select id="saleBrand">
+              <option>brand_1</option>
+              <option>brand_2</option>
+              <option>brand_3</option>
+            </select>
+          </label>
+          <label>Earning (₹)
+            <input id="saleEarning" type="number" min="0.01" step="0.01" value="40" required />
+          </label>
+          <button class="btn" type="submit">Add sale</button>
+        </form>
+      </section>
+
+      <!-- Withdraw -->
+      <section class="card">
+        <h2>Withdraw</h2>
+        <form id="withdrawForm" class="form">
+          <label>Amount (₹)
+            <input id="withdrawAmount" type="number" min="0.01" step="0.01" placeholder="0.00" required />
+          </label>
+          <button class="btn" type="submit">Initiate withdrawal</button>
+          <p class="hint">Max one withdrawal per user every 24h.</p>
+        </form>
+      </section>
+    </div>
+
+    <!-- Sales -->
+    <section class="card">
+      <h2>Sales</h2>
+      <div class="table-scroll">
+        <table id="salesTable">
+          <thead>
+            <tr><th>#</th><th>Brand</th><th>Earning</th><th>Status</th><th>Advance</th><th class="right">Reconcile</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Withdrawals -->
+    <section class="card">
+      <h2>Withdrawals</h2>
+      <div class="table-scroll">
+        <table id="withdrawalsTable">
+          <thead>
+            <tr><th>#</th><th>Amount</th><th>Status</th><th class="right">Actions</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Ledger -->
+    <section class="card">
+      <h2>Ledger <span class="muted">(audit trail)</span></h2>
+      <div class="table-scroll">
+        <table id="ledgerTable">
+          <thead>
+            <tr><th>#</th><th>Type</th><th>Amount</th><th>Balance after</th><th>Note</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
